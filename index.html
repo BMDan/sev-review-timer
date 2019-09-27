@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SEV Review Timer</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+  <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+  <script>
+    function update_pct(bar, pct, label) {
+      // Ensure 0 <= pct, and that pct has no fractional component.  We display > 100%
+      // as text, but max out the bar at 100% for reasons that are hopefully obvious.
+      pct = Math.max(0, Math.trunc(pct));
+      // Ensure there's a label of some sort.
+      if( label == undefined ) {
+        label = '' + Math.trunc(pct) + '%';
+      }
+      update_pct_i(bar, Math.min(pct, 100), label);
+    }
+    function update_pct_i(bar, pct, label) {
+      $('#' + bar).width('' + pct + '%');
+      $('#' + bar).attr('aria-valuenow', pct);
+      $('#' + bar + "_label")[0].innerHTML = label;
+    }
+    function compute() {
+      tick();
+    }
+    function crappy_sprintf(len, s) {
+      //console.log('sprintf("%0' + len + 's", "' + s + '")');
+      return "0".repeat(Math.max(0, len - s.toString().length)) + s;
+    }
+    function durationToStr(dur) {
+      var durStr = '';
+      if ( dur < 0 ) {
+        return "expired";
+      }
+      var labels = {
+        'milliseconds': [1000, "ms"],
+        'seconds': [60, "s"],
+        'minutes': [60, ":"],
+        'hours': [24, ":"],
+        'days': [365, "days, "],
+        'years': [3000000, "years (nominal), "],
+        'epochs': [-1, "geological epochs (approx.), "]
+      };
+      for( ki = 0; ki < Object.keys(labels).length; ki++ ) {
+        var thisLabel = Object.keys(labels)[ki];
+        var thisDiv = labels[thisLabel][0];
+        var thisDesc = labels[thisLabel][1];
+        //console.log(dur + " at " + thisLabel);
+        if( dur <= 0 ) {
+          break;
+        }
+        if( thisLabel == 'milliseconds' ) {
+          // Drop ms on the floor.
+          dur = Math.trunc(dur / thisDiv);
+          continue;
+        }
+        if( thisLabel == "epochs" ) {
+          durStr = dur.toString() + thisDesc + durStr;
+          break;
+        }
+        durStr = crappy_sprintf(Math.ceil(Math.log10(thisDiv) + 0.000001), dur % thisDiv) + thisDesc + durStr;
+        dur = Math.trunc(dur / thisDiv);
+      }
+
+      return durStr;
+    }
+    function tick() {
+      var nowish = new Date();
+      $('#now')[0].innerHTML = nowish.toTimeString().substr(0, 5);
+      var duration = "";
+      var endStr = nowish.toDateString() + " " + $('#armageddonoclock')[0].value;
+      if( $('#armageddonoclock')[0].value ) {
+        duration = "(Approx. " + durationToStr(Date.parse(endStr) - nowish.getTime()) + ")";
+      }
+      $('#duration')[0].innerHTML = duration;
+      var sevs_remaining = ($('#numsevs')[0].value - $('#sevsdone')[0].value);
+      var millis_per_sev = Math.max(
+        (Date.parse(endStr) - $('#thissevstart')[0].value) / 
+        (
+          // Pretend like there are extra SEVs if this SEV has bonus.
+          sevs_remaining +
+          Math.max($('#thissevbonus')[0].value, 0)
+        ),
+        1
+      );
+      // Assign this SEV a proportion of the millis that is weighted either 1.0x (if
+      // bonus is unset) or 1.0+bonus otherwise.
+      var this_sev_slice = millis_per_sev * (1 + Math.max($('#thissevbonus')[0].value, 0));
+      if( $('#sevsdone')[0].value == $('#numsevs')[0].value ) {
+        $('#this_sev_time_pct_div')[0].style.visibility = 'hidden';
+      }
+      else {
+        $('#this_sev_time_pct_div')[0].style.visibility = '';
+        update_pct(
+          'this_sev_time_pct',
+          (nowish.getTime() - $('#thissevstart')[0].value) * 100 / this_sev_slice,
+          durationToStr(nowish.getTime() - $('#thissevstart')[0].value) + " / " + durationToStr(this_sev_slice)
+        )
+      }
+      update_pct('mtg_pct_time', (nowish.getTime() - $('#sevreviewstart')[0].value) / Math.max(1, (Date.parse(endStr) - $('#sevreviewstart')[0].value)) * 100);
+      update_pct(
+        'mtg_pct_sevs',
+        $('#sevsdone')[0].value / Math.max(1, $('#numsevs')[0].value) * 100,
+        (
+          $('#sevsdone')[0].value +
+          "/" +
+          $('#numsevs')[0].value +
+          " completed"
+        )
+      );
+    }
+    function start_review() {
+      var nowish = new Date();
+      $('#sevreviewstart')[0].value = nowish.getTime();
+      $('#thissevstart')[0].value = nowish.getTime();
+      $('#config')[0].hidden = true;
+      $('#runtime')[0].hidden = false;
+    }
+    function incr_sevsdone() {
+      $('#sevsdone')[0].value = Math.max($('#sevsdone')[0].value, 0) + 1;
+      $('#thissevbonus')[0].value = 0;
+      $('#thissevstart')[0].value = Date.now();
+      compute()
+    }
+    function toggle_config() {
+      $('#config')[0].hidden = !$('#config')[0].hidden;
+    }
+    function incr_sevbonus() {
+      $('#thissevbonus')[0].value = Math.max($('#thissevbonus')[0].value, 0) + 0.75;
+      compute()
+    }
+  </script>
+  <style>
+#text {
+  background-image: url('pomodoro1.jpg');
+  background-repeat: no-repeat;
+  height: 425px;
+  background-size: contain;
+}
+input.computed {
+  background-color: rgba(0, 0, 0, 0.075);
+}
+#config {
+  //box-shadow: -2px -2px 5px 0px black;
+}
+#computedconfig {
+  box-shadow: -2px -2px 5px 0px black;
+}
+#toggle-config {
+  float: right;
+}
+#runtime {
+  margin-bottom: 1em;
+}
+  </style>
+</head>
+<body onload="setInterval(tick, 1000)">
+  <div class="container">
+    <div class="container" id="text">
+      <h1>Welcome to SEV Review</h1>
+      <div class="container" id="config">
+        <label for="numsevs"><h3># of SEVs:</h3></label>&nbsp;<input type="text" length="2" id="numsevs" onchange="compute()">
+        <br>
+        <label for="armageddonoclock"><h3>End time:</h3></label>&nbsp;<input type="text" length="2" id="armageddonoclock" onchange="compute()">&nbsp;<span id="duration"></span>(It's currently <span id="now"></span>.)
+        <br>
+        <input type="button" value="(Re-)Start SEV Review" class="btn btn-success" onclick="start_review()">
+        <br>
+        <label for="computedconfig"><em>Typically, the following values are computed and don't need to be edited:</em></label>
+        <div id="computedconfig">
+          <label for="sevsdone"><h3>SEVs done (or skipped):</h3></label>&nbsp;<input type="text" length="2" id="sevsdone" onchange="compute()" class="computed">
+          <br>
+          <label for="thissevstart"><h4>Current SEV starttime:</h4></label>&nbsp;<input type="text" length="13" id="thissevstart" onchange="compute()" class="computed">
+          <br>
+          <label for="thissevbonus"><h4>Current SEV reserved time:</h4></label>&nbsp;<input type="text" length="13" id="thissevbonus" onchange="compute()" class="computed">
+          <br>
+          <label for="sevreviewstart"><h4>SEV review starttime:</h4></label>&nbsp;<input type="text" length="13" id="sevreviewstart" onchange="compute()" class="computed">
+          <br>
+        </div>
+      </div>
+    </div>
+    <div class="container" id="runtime" hidden>
+      <input type="button" class="btn btn-outline-primary" value="Complete SEV" onclick="incr_sevsdone();">
+      <input type="button" class="btn btn-outline-secondary" value="Skip SEV" onclick="incr_sevsdone()">
+      <input type="button" class="btn btn-outline-warning" value="Extend this SEV's discussion" onclick="incr_sevbonus()">
+      <input type="button" id="toggle-config" class="btn btn-sm btn-outline-info" data-toggle="button" value="Toggle config" onclick="toggle_config()">
+      <br>
+    </div>
+    <div class="container" id="bars">
+      <div class="progress" id="this_sev_time_pct_div">
+        <label for="this_sev_time_pct">This&nbsp;&#x23F0;:&nbsp;</label><div class="progress-bar progress-bar-striped" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" id="this_sev_time_pct"><span id="this_sev_time_pct_label">0</span></div>
+      </div>
+      <br clear="all"/>
+      <div class="progress" id="mtg_pct_time_div">
+         <label for="mtg_pct_time">Global &#x23F0;:&nbsp;</label><div class="progress-bar progress-bar-striped" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" id="mtg_pct_time"><span id="mtg_pct_time_label">0</span></div>
+      </div>
+      <br clear="all"/>
+      <div class="progress" id="mtg_pct_sevs_div">
+        <label for="mtg_pct_sevs">SEVs:&nbsp;</label><div class="progress-bar progress-bar-striped" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" id="mtg_pct_sevs"><span id="mtg_pct_sevs_label">0</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+
